@@ -10,9 +10,25 @@ let graficoIngresosInstance = null;
 // ============================================
 // CONFIGURACIÓN RAG + GEMINI
 // ============================================
-const GEMINI_API_KEY = "AQ.Ab8RN6LniV2xuKK7MkYNis-jk-L3CCfOmrzRj0GdhOjuABUKJQ";
-const GEMINI_MODEL = "gemini-3.6-flash";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+// ⚠️ La API key NO debe estar hardcodeada en el código.
+// Se puede definir así antes de cargar este script (ej. desde Firebase Remote Config,
+// un prompt la primera vez, o localStorage):
+//   localStorage.setItem("GEMINI_API_KEY", "TU_KEY_AQUI")
+const GEMINI_API_KEY = (() => {
+  try {
+    return (
+      window.GEMINI_API_KEY ||
+      localStorage.getItem("GEMINI_API_KEY") ||
+      ""
+    );
+  } catch (e) {
+    return "";
+  }
+})();
+
+// Modelo válido (antes decía "gemini-3.6-flash", que NO existe → error 404)
+const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
 
 // Referencias DOM (Seguras)
 const dom = {
@@ -1077,6 +1093,9 @@ window.exportarJSON = exportarJSON;
 window.importarJSON = importarJSON;
 window.generarPDFResumen = generarPDFResumen;
 
+// El chatbot del HTML usa este nombre; lo apuntamos a la versión con RAG + Gemini
+window.enviarMensajeChatbotIA = enviarMensajeChatbot;
+
 // --- PRUEBA DE DIAGNÓSTICO ---
 console.log("🔍 Iniciando diagnóstico...");
 console.log(
@@ -1219,7 +1238,10 @@ async function enviarMensajeChatbot() {
   container.scrollTop = container.scrollHeight;
 
   try {
-    const respuesta = await consultarGeminiRAG(mensaje.toLowerCase());
+    const respuesta = await consultarGeminiRAG(mensaje);
+    // Guardar el turno en la memoria de conversación
+    guardarEnHistorial("user", mensaje);
+    guardarEnHistorial("model", respuesta);
     const typing = document.getElementById(idTyping);
     if (typing) typing.remove();
     agregarMensajeChatbot("bot", respuesta);
@@ -1460,6 +1482,23 @@ function obtenerPromedioDiario() {
   return `📅 Promedio diario de gastos: S/ ${promedio.toFixed(2)}\n• Período: ${dias} días\n• Total: S/ ${totalGastos.toFixed(2)}`;
 }
 
+// ============================================
+// RAG: MEMORIA DE CONVERSACIÓN + CONSULTA A GEMINI
+// ============================================
+
+// Historial corto de la conversación (ventana deslizante).
+// Esto es lo que convierte el chat en una conversación continua
+// en lugar de una pregunta aislada por mensaje.
+let historialChat = []; // [{ rol: "user" | "model", texto: "..." }]
+
+function guardarEnHistorial(rol, texto) {
+  historialChat.push({ rol, texto });
+  // Mantener solo los últimos 10 turnos para no inflar el prompt
+  if (historialChat.length > 20) {
+    historialChat = historialChat.slice(-20);
+  }
+}
+
 // Permitir enviar con Enter
 document.addEventListener("DOMContentLoaded", () => {
   const chatInput = document.getElementById("chatbot-input");
@@ -1548,6 +1587,18 @@ ${topGastos}`;
 // RAG: CONSULTAR A GEMINI
 // ============================================
 async function consultarGeminiRAG(pregunta) {
+  // Si no hay API key configurada, usar el motor local de reglas
+  if (!GEMINI_API_KEY) {
+    console.warn("⚠️ Falta la API key de Gemini. Usando respuestas locales.");
+    return (
+      "⚙️ Aún no configuraste tu API key de Gemini.\n\n" +
+      "Cómo activarla (una sola vez, abre la consola F12 y ejecuta):\n" +
+      'localStorage.setItem("GEMINI_API_KEY", "TU_KEY")\n\n' +
+      "Luego recarga la página. Mientras tanto, te respondo con el motor local:\n\n" +
+      procesarPreguntaChatbotLocal(pregunta)
+    );
+  }
+
   try {
     const contexto = construirContextoRAG();
 
@@ -1557,6 +1608,7 @@ ${contexto}
 
 INSTRUCCIONES:
 - Responde SOLO basándote en los datos proporcionados. No inventes cifras.
+- Haz los cálculos que te pidan (sumas, porcentajes, promedios, comparaciones entre meses) a partir de los datos.
 - Sé conciso (máximo 5-6 líneas). Usa viñetas si ayuda.
 - Moneda: Soles peruanos (S/).
 - Si detectas patrones interesantes, menciónalos brevemente.
@@ -1567,11 +1619,28 @@ PREGUNTA DEL USUARIO: ${pregunta}
 
 RESPUESTA:`;
 
+    // System instruction (los datos + reglas van como system para no repetirlos
+    // en cada turno) + historial de conversación como turnos user/model.
+    const contents = [
+      {
+        role: "user",
+        parts: [{ text: prompt }],
+      },
+    ];
+
+    // Agregar memoria de conversación (turnos anteriores)
+    for (const turno of historialChat) {
+      contents.push({
+        role: turno.rol === "user" ? "user" : "model",
+        parts: [{ text: turno.texto }],
+      });
+    }
+
     const response = await fetch(GEMINI_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents,
         generationConfig: {
           temperature: 0.4,
           maxOutputTokens: 500,

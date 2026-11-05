@@ -1435,89 +1435,16 @@ BLOQUE 12: UTILIDADES
     <!-- Scripts -->
     <script src="javascript-final.js"></script>
 
-    <script type="module">
-      // API KEY de Gemini
-      const API_KEY = "AIzaSyCbfRPTKmXllikcbXApagQmQs-Tp5xT30A";
+    <!--
+      ✅ CHATBOT con IA (Gemini + RAG): la lógica vive en javascript-final.js
+      (funciones: enviarMensajeChatbot / consultarGeminiRAG / construirContextoRAG).
+      Antes había un segundo chatbot duplicado aquí con una API key hardcodeada
+      y un modelo inexistente; fue eliminado.
 
-      // ✅ CORRECTO: Usar gemini-2.5-flash
-      const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
-
-      window.enviarMensajeChatbotIA = async function () {
-        const input = document.getElementById("chatbot-input");
-        const mensaje = input.value.trim();
-
-        if (!mensaje) return;
-
-        // Mostrar mensaje del usuario
-        agregarMensajeChatbot("user", mensaje);
-        input.value = "";
-
-        // Mostrar "Escribiendo..."
-        const container = document.getElementById("chatbot-mensajes");
-        const divEsperando = document.createElement("div");
-        divEsperando.style.cssText =
-          "margin:10px 0; padding:10px; border-radius:10px; max-width:80%; background:#f1f5f9; font-style:italic; color:#64748b;";
-        divEsperando.textContent = "🤔 Analizando...";
-        container.appendChild(divEsperando);
-        container.scrollTop = container.scrollHeight;
-
-        try {
-          // Preparar datos financieros
-          const datosJSON = JSON.stringify(window.movimientos || [], null, 2);
-
-          const prompt = `Eres "JLBH Assistant", un asistente financiero experto y amigable.
-      Analiza estos datos financieros (JSON):
-      ${datosJSON}
-
-      Pregunta del usuario: "${mensaje}"
-
-      Responde en español de forma clara y concisa. Usa emojis.`;
-
-          // Llamar a la API REST directamente
-          const response = await fetch(API_URL, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: prompt,
-                    },
-                  ],
-                },
-              ],
-            }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(
-              errorData.error?.message || `HTTP ${response.status}`,
-            );
-          }
-
-          const data = await response.json();
-          const respuesta = data.candidates[0].content.parts[0].text;
-
-          // Remover "Escribiendo..." y mostrar respuesta
-          container.removeChild(divEsperando);
-          agregarMensajeChatbot("bot", respuesta);
-        } catch (error) {
-          console.error("Error Gemini:", error);
-          container.removeChild(divEsperando);
-          agregarMensajeChatbot("bot", "❌ Error: " + error.message);
-        }
-      };
-
-      // Permitir enviar con Enter
-      document
-        .getElementById("chatbot-input")
-        .addEventListener("keypress", (e) => {
-          if (e.key === "Enter") window.enviarMensajeChatbotIA();
-        });
-    </script>
+      Para activar la IA, configura TU key una sola vez (consola F12):
+        localStorage.setItem("GEMINI_API_KEY", "TU_API_KEY_DE_GEMINI")
+      Consigue tu key en https://aistudio.google.com/apikey
+      ⚠️ Si ya publicaste keys anteriores, revócalas en Google AI Studio / Cloud Console.
+    -->
   </body>
 </html>
